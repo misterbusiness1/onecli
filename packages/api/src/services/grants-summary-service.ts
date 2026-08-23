@@ -44,7 +44,6 @@ export interface AgentWithGrantsSummary {
   id: string;
   name: string;
   identifier: string;
-  accessToken: string;
   isDefault: boolean;
   secretMode: string;
   createdAt: Date;

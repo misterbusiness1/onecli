@@ -2,7 +2,6 @@ export interface Agent {
   id: string;
   name: string;
   identifier: string;
-  accessToken: string;
   isDefault: boolean;
   /** The all-vs-selective injection switch the gateway reads per request. Not
    * editable from the console since step 10 — policy rules decide access. */

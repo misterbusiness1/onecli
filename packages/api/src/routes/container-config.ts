@@ -16,6 +16,10 @@ import { loadInjectionRules } from "../services/policy-simulate/load-rules";
 import { resolvePrincipalSet } from "../services/policy-simulate/principal-set";
 import { getCrypto } from "../providers";
 import { logger } from "../lib/logger";
+import {
+  isAuthorizedOperatorContext,
+  verifyPaperclipRunBinding,
+} from "../services/paperclip-run-binding.js";
 
 /**
  * A `where` selecting exactly the secrets this agent can be handed: the
@@ -135,7 +139,47 @@ export const containerConfigRoutes = () => {
       const auth = c.get("auth");
       const projectId = requireProjectId(auth);
 
-      const agentIdentifier = c.req.query("agent");
+      let agentIdentifier = c.req.query("agent");
+      const binding = c.req.header("x-paperclip-onecli-run-binding");
+      const hasAgentRunContext = Boolean(
+        binding ||
+        c.req.header("x-paperclip-run-id") ||
+        c.req.header("x-paperclip-agent-id") ||
+        c.req.header("x-paperclip-company-id"),
+      );
+      if (hasAgentRunContext) {
+        const verified = verifyPaperclipRunBinding(binding, {
+          runId: c.req.header("x-paperclip-run-id") ?? "",
+          agentId: c.req.header("x-paperclip-agent-id") ?? "",
+          companyId: c.req.header("x-paperclip-company-id") ?? "",
+          selector: agentIdentifier ?? "",
+        });
+        if (!verified.ok) {
+          logger.warn(
+            { code: verified.code, route: "GET /v1/container-config" },
+            "Paperclip run binding rejected before agent lookup",
+          );
+          return c.json(
+            {
+              error: "Authenticated run binding rejected",
+              code: verified.code,
+            },
+            403,
+          );
+        }
+        agentIdentifier = verified.identity;
+      } else if (
+        !isAuthorizedOperatorContext(c.req.header("x-onecli-operator-context"))
+      ) {
+        return c.json(
+          {
+            error:
+              "Explicit operator authorization or authenticated agent run is required",
+            code: "OPERATOR_CONTEXT_REQUIRED",
+          },
+          403,
+        );
+      }
 
       let agent = agentIdentifier
         ? await db.agent.findFirst({

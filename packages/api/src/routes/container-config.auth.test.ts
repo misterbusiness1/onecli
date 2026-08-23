@@ -1,3 +1,4 @@
+import { createHmac } from "node:crypto";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -67,6 +68,49 @@ describe("GET /container-config authorization boundary", () => {
     expect(mocks.agentFindFirst).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { projectId: "project-1", isDefault: true },
+      }),
+    );
+  });
+
+  it("authenticates a complete Paperclip run without a management Authorization header", async () => {
+    process.env.PAPERCLIP_ONECLI_BINDING_SECRET = "binding-secret";
+    const header = Buffer.from(
+      JSON.stringify({ alg: "HS256", typ: "JWT" }),
+    ).toString("base64url");
+    const claims = Buffer.from(
+      JSON.stringify({
+        run_id: "run-1",
+        agent_id: "paperclip-agent-1",
+        company_id: "company-1",
+        onecli_identity: "onecli-agent-1",
+        aud: "onecli-runtime",
+        iat: Math.floor(Date.now() / 1000) - 1,
+        exp: Math.floor(Date.now() / 1000) + 60,
+      }),
+    ).toString("base64url");
+    const companyKey = createHmac("sha256", "binding-secret")
+      .update("onecli-run-binding:company-1")
+      .digest();
+    const signature = createHmac("sha256", companyKey)
+      .update(`${header}.${claims}`)
+      .digest("base64url");
+
+    const response = await containerConfigRoutes().request(
+      "/?agent=onecli-agent-1",
+      {
+        headers: {
+          "X-Paperclip-OneCLI-Run-Binding": `${header}.${claims}.${signature}`,
+          "X-Paperclip-Run-Id": "run-1",
+          "X-Paperclip-Agent-Id": "paperclip-agent-1",
+          "X-Paperclip-Company-Id": "company-1",
+        },
+      },
+    );
+
+    expect(response.status).toBe(200);
+    expect(mocks.agentFindFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { projectId: "project-1", identifier: "onecli-agent-1" },
       }),
     );
   });

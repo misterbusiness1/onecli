@@ -88,6 +88,12 @@ function consumeTenantMapping(): Record<
   }
 }
 
+export function resolvePaperclipRunTenant(
+  companyId: string,
+): { projectId: string; organizationId: string } | undefined {
+  return consumeTenantMapping()[companyId];
+}
+
 export function verifyPaperclipRunBinding(
   token: string | undefined,
   expected: PaperclipRunContext,

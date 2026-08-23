@@ -18,6 +18,7 @@ import { getCrypto } from "../providers";
 import { logger } from "../lib/logger";
 import {
   isAuthorizedOperatorContext,
+  resolvePaperclipRunTenant,
   verifyPaperclipRunBinding,
 } from "../services/paperclip-run-binding.js";
 
@@ -125,7 +126,45 @@ const markAgentConnected = async (projectId: string) => {
 
 export const containerConfigRoutes = () => {
   const app = new Hono<ApiEnv>();
-  app.use("*", authMiddleware);
+  app.use("*", async (c, next) => {
+    const binding = c.req.header("x-paperclip-onecli-run-binding");
+    const runId = c.req.header("x-paperclip-run-id") ?? "";
+    const agentId = c.req.header("x-paperclip-agent-id") ?? "";
+    const companyId = c.req.header("x-paperclip-company-id") ?? "";
+    const selector = c.req.query("agent") ?? "";
+    if (binding || runId || agentId || companyId) {
+      const tenant = resolvePaperclipRunTenant(companyId);
+      const verified = tenant
+        ? verifyPaperclipRunBinding(binding, {
+            runId,
+            agentId,
+            companyId,
+            selector,
+            projectId: tenant.projectId,
+            organizationId: tenant.organizationId,
+          })
+        : { ok: false as const, code: "RUN_TENANT_UNMAPPED" };
+      if (!verified.ok) {
+        logger.warn(
+          { code: verified.code, route: "GET /v1/container-config" },
+          "Paperclip run binding rejected before authentication and agent lookup",
+        );
+        return c.json(
+          { error: "Authenticated run binding rejected", code: verified.code },
+          403,
+        );
+      }
+      c.set("auth", {
+        userId: `paperclip-run:${agentId}`,
+        userEmail: "paperclip-run@internal.invalid",
+        projectId: tenant!.projectId,
+        organizationId: tenant!.organizationId,
+        scope: "project",
+      });
+      return next();
+    }
+    return authMiddleware(c, next);
+  });
 
   /**
    * GET /container-config

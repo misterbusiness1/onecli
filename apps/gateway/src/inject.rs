@@ -473,6 +473,40 @@ pub(crate) fn path_matches(request_path: &str, pattern: &str) -> bool {
     path == pattern
 }
 
+/// Scoped credentials must not match a path that an upstream may normalize
+/// differently. Otherwise `/allowed/../forbidden` (including encoded forms)
+/// can receive a credential before the upstream resolves it to `/forbidden`.
+pub(crate) fn scoped_path_is_unambiguous(path: &str) -> bool {
+    let path = path.split('?').next().unwrap_or(path);
+    path.split('/').all(|segment| {
+        let bytes = segment.as_bytes();
+        let mut index = 0;
+        while index < bytes.len() {
+            if bytes[index] != b'%' {
+                index += 1;
+                continue;
+            }
+            if index + 2 >= bytes.len()
+                || !bytes[index + 1].is_ascii_hexdigit()
+                || !bytes[index + 2].is_ascii_hexdigit()
+                || (bytes[index + 1] == b'2' && bytes[index + 2] == b'5')
+            {
+                return false;
+            }
+            index += 3;
+        }
+
+        let Ok(decoded) = percent_encoding::percent_decode_str(segment).decode_utf8() else {
+            return false;
+        };
+        let route_segment = decoded.split(';').next().unwrap_or(decoded.as_ref());
+        !matches!(route_segment, "." | "..")
+            && !decoded.contains('/')
+            && !decoded.contains('\\')
+            && !decoded.bytes().any(|byte| byte.is_ascii_control())
+    })
+}
+
 fn has_mid_path_wildcard(pattern: &str) -> bool {
     pattern.len() > 1 && pattern[..pattern.len() - 1].contains('*')
 }
@@ -880,6 +914,32 @@ mod tests {
         assert!(path_matches("/v1/messages?api_key=sk-123", "*"));
         assert!(!path_matches("/v2/messages?api_key=sk-123", "/v1/*"));
         assert!(!path_matches("/v1/messages?api_key=sk-123", "/v1/other"));
+    }
+
+    #[test]
+    fn scoped_paths_reject_normalization_bypasses() {
+        for path in [
+            "/api/templates/../flows/",
+            "/api/templates/%2e%2e/flows/",
+            "/api/templates%2f..%2fflows/",
+            "/api/templates%5c..%5cflows/",
+            "/api/templates/%252e%252e/flows/",
+            "/api/templates/..;x/flows/",
+            "/api/templates/%00/flows/",
+            "/api/templates/%zz/flows/",
+        ] {
+            assert!(!scoped_path_is_unambiguous(path), "{path}");
+            assert!(path_matches(path, "*"), "{path}");
+            assert!(path_matches(path, "/*"), "{path}");
+        }
+
+        assert!(scoped_path_is_unambiguous("/api/templates/.well-known"));
+        assert!(scoped_path_is_unambiguous(
+            "/api/templates/name%20with%20spaces"
+        ));
+        assert!(scoped_path_is_unambiguous(
+            "/api/templates?redirect=%2Fapi%2Fflows"
+        ));
     }
 
     #[test]

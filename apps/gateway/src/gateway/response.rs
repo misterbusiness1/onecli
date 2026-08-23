@@ -116,6 +116,26 @@ pub(super) fn bad_gateway() -> Response<axum::body::Body> {
     )
 }
 
+pub(super) fn ambiguous_request_path<S>() -> Response<ForwardBody<S>> {
+    with_no_retry(json_error(
+        StatusCode::BAD_REQUEST,
+        serde_json::json!({
+            "error": "ambiguous_request_path",
+            "message": "Request path contains an ambiguous encoded or dot segment.",
+        }),
+    ))
+}
+
+pub(super) fn ambiguous_request_path_axum() -> Response<axum::body::Body> {
+    with_no_retry(json_error_axum(
+        StatusCode::BAD_REQUEST,
+        serde_json::json!({
+            "error": "ambiguous_request_path",
+            "message": "Request path contains an ambiguous encoded or dot segment.",
+        }),
+    ))
+}
+
 /// Build the shared JSON body for multiple-connections responses.
 fn multiple_connections_json(
     connections: &[crate::connect::ConnectionChoice],

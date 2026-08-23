@@ -95,6 +95,12 @@ pub(super) async fn mitm(
                     let is_ws = super::websocket::is_websocket_upgrade(&req);
                     let connection_id = connect::extract_connection_id(req.headers());
                     let request_path = req.uri().path_and_query().map(|pq| pq.to_string());
+                    if request_path
+                        .as_deref()
+                        .is_some_and(|path| !crate::inject::scoped_path_is_unambiguous(path))
+                    {
+                        return Ok(response::ambiguous_request_path());
+                    }
 
                     // Re-resolve rules from cache on each request so that
                     // secret/rule changes take effect without a reconnect.

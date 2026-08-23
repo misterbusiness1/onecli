@@ -944,6 +944,13 @@ async fn handle_http_proxy(
     peer_addr: SocketAddr,
     state: GatewayState,
 ) -> Result<Response<axum::body::Body>, anyhow::Error> {
+    if req
+        .uri()
+        .path_and_query()
+        .is_some_and(|path| !inject::scoped_path_is_unambiguous(path.as_str()))
+    {
+        return Ok(response::ambiguous_request_path_axum());
+    }
     let authority = req
         .uri()
         .authority()

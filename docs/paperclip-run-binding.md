@@ -13,7 +13,7 @@ The `agent` query value is comparison input only. The authenticated binding is a
 
 Legacy Default resolution is outside the agent path and requires the configured `ONECLI_OPERATOR_CONTEXT_TOKEN` in `X-OneCLI-Operator-Context`. Do not provide that token to agent runtimes.
 
-Paperclip and OneCLI share a managed `PAPERCLIP_ONECLI_BINDING_SECRET`; it is never injected into a run. Existing grants and providers are unchanged. Container delivery remains brokered through the gateway: only its run/agent proxy capability and placeholder credential stubs reach the container, never raw managed provider credentials or shared compatibility files.
+Paperclip and OneCLI share a managed `PAPERCLIP_ONECLI_BINDING_SECRET`; it is never injected into a run. Existing grants and providers are unchanged. The shipped agent client does not read or send `ONECLI_API_KEY` or operator authority: the signed, run-scoped binding is its only container-config credential. Container delivery remains brokered through the gateway: only its run/agent proxy capability and placeholder credential stubs reach the container, never raw managed provider credentials or shared compatibility files.
 
 ## Compatible deployment order
 

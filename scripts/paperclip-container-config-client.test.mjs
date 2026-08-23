@@ -36,7 +36,6 @@ test("actual client transports the authenticated Paperclip context headers", asy
     const result = await run({
       PATH: process.env.PATH,
       ONECLI_URL: `http://127.0.0.1:${address.port}`,
-      ONECLI_API_KEY: "api-proof",
       ONECLI_AGENT: "occ-plugin-engineer",
       PAPERCLIP_ONECLI_RUNTIME_BINDING: "binding-proof",
       PAPERCLIP_RUN_ID: "run-1",
@@ -55,6 +54,7 @@ test("actual client transports the authenticated Paperclip context headers", asy
     assert.equal(observed.headers["x-paperclip-run-id"], "run-1");
     assert.equal(observed.headers["x-paperclip-agent-id"], "agent-1");
     assert.equal(observed.headers["x-paperclip-company-id"], "company-1");
+    assert.equal(observed.headers.authorization, undefined);
   } finally {
     await new Promise((resolve) => server.close(resolve));
   }
@@ -72,7 +72,6 @@ test("unbound execution fails closed before a OneCLI request", async () => {
     const result = await run({
       PATH: process.env.PATH,
       ONECLI_URL: `http://127.0.0.1:${address.port}`,
-      ONECLI_API_KEY: "api-proof",
     });
     assert.equal(result.code, 78);
     assert.equal(requests, 0);

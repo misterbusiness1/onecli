@@ -2,7 +2,6 @@
 
 const required = [
   "ONECLI_URL",
-  "ONECLI_API_KEY",
   "ONECLI_AGENT",
   "PAPERCLIP_ONECLI_RUNTIME_BINDING",
   "PAPERCLIP_RUN_ID",
@@ -21,7 +20,6 @@ if (missing.length > 0) {
   url.searchParams.set("agent", process.env.ONECLI_AGENT.trim());
   const response = await fetch(url, {
     headers: {
-      Authorization: `Bearer ${process.env.ONECLI_API_KEY.trim()}`,
       "X-Paperclip-OneCLI-Run-Binding":
         process.env.PAPERCLIP_ONECLI_RUNTIME_BINDING.trim(),
       "X-Paperclip-Run-Id": process.env.PAPERCLIP_RUN_ID.trim(),

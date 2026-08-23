@@ -38,6 +38,9 @@ describe("GET /container-config authorization boundary", () => {
     vi.clearAllMocks();
     resetPaperclipRunBindingForTests();
     process.env.ONECLI_OPERATOR_CONTEXT_TOKEN = "operator-proof";
+    process.env.PAPERCLIP_ONECLI_TENANT_MAPPING = JSON.stringify({
+      "company-1": { projectId: "project-1", organizationId: "org-1" },
+    });
     mocks.agentFindFirst.mockResolvedValue({
       id: "default-agent",
       accessToken: "aoc_test",

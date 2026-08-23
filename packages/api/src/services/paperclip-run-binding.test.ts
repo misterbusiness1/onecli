@@ -12,6 +12,8 @@ const context = {
   agentId: "agent-1",
   companyId: "company-1",
   selector: "agent-1",
+  projectId: "project-1",
+  organizationId: "org-1",
 };
 
 function mint(
@@ -46,10 +48,15 @@ function mint(
 describe("Paperclip run binding", () => {
   beforeEach(() => {
     process.env.PAPERCLIP_ONECLI_BINDING_SECRET = SECRET;
+    process.env.PAPERCLIP_ONECLI_TENANT_MAPPING = JSON.stringify({
+      "company-1": { projectId: "project-1", organizationId: "org-1" },
+      occ: { projectId: "project-1", organizationId: "org-1" },
+    });
   });
   afterEach(() => {
     delete process.env.PAPERCLIP_ONECLI_BINDING_SECRET;
     delete process.env.ONECLI_OPERATOR_CONTEXT_TOKEN;
+    delete process.env.PAPERCLIP_ONECLI_TENANT_MAPPING;
     resetPaperclipRunBindingForTests();
   });
 
@@ -67,6 +74,8 @@ describe("Paperclip run binding", () => {
         agentId: `oxfa-${index}`,
         companyId: "occ",
         selector: `oxfa-${index}`,
+        projectId: "project-1",
+        organizationId: "org-1",
       };
       const token = mint(
         {
@@ -117,6 +126,24 @@ describe("Paperclip run binding", () => {
       "RUN_BINDING_SELECTOR_MISMATCH",
     ],
     ["tamper", `${mint().slice(0, -1)}x`, context, "RUN_BINDING_INVALID"],
+    [
+      "cross-project tenant",
+      mint(),
+      { ...context, projectId: "project-2" },
+      "RUN_TENANT_MISMATCH",
+    ],
+    [
+      "cross-organization tenant",
+      mint(),
+      { ...context, organizationId: "org-2" },
+      "RUN_TENANT_MISMATCH",
+    ],
+    [
+      "unmapped company",
+      mint({ company_id: "company-2" }, "company-2"),
+      { ...context, companyId: "company-2" },
+      "RUN_TENANT_UNMAPPED",
+    ],
   ])("rejects %s before lookup", (_name, token, expected, code) => {
     expect(verifyPaperclipRunBinding(token, expected, 2_000_000_000)).toEqual({
       ok: false,
@@ -137,5 +164,6 @@ describe("Paperclip run binding", () => {
       verifyPaperclipRunBinding(mint(), context, 2_000_000_000),
     ).toMatchObject({ ok: true });
     expect("PAPERCLIP_ONECLI_BINDING_SECRET" in process.env).toBe(false);
+    expect("PAPERCLIP_ONECLI_TENANT_MAPPING" in process.env).toBe(false);
   });
 });

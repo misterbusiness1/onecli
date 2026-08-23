@@ -153,6 +153,8 @@ export const containerConfigRoutes = () => {
           agentId: c.req.header("x-paperclip-agent-id") ?? "",
           companyId: c.req.header("x-paperclip-company-id") ?? "",
           selector: agentIdentifier ?? "",
+          projectId,
+          organizationId: auth.organizationId,
         });
         if (!verified.ok) {
           logger.warn(

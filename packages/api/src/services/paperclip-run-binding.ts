@@ -5,6 +5,8 @@ export interface PaperclipRunContext {
   agentId: string;
   companyId: string;
   selector: string;
+  projectId: string;
+  organizationId: string;
 }
 
 type Claims = {
@@ -25,6 +27,10 @@ const equal = (left: string, right: string): boolean => {
 
 let bindingSecret: string | null = null;
 let operatorContextToken: string | null = null;
+let tenantMapping: Record<
+  string,
+  { projectId: string; organizationId: string }
+> | null = null;
 
 function consumeManagedValue(
   key: "PAPERCLIP_ONECLI_BINDING_SECRET" | "ONECLI_OPERATOR_CONTEXT_TOKEN",
@@ -43,6 +49,43 @@ function consumeManagedValue(
 export function resetPaperclipRunBindingForTests(): void {
   bindingSecret = null;
   operatorContextToken = null;
+  tenantMapping = null;
+}
+
+function consumeTenantMapping(): Record<
+  string,
+  { projectId: string; organizationId: string }
+> {
+  if (tenantMapping) return tenantMapping;
+  const raw = process.env.PAPERCLIP_ONECLI_TENANT_MAPPING?.trim();
+  delete process.env.PAPERCLIP_ONECLI_TENANT_MAPPING;
+  if (!raw) return (tenantMapping = {});
+  try {
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    tenantMapping = Object.fromEntries(
+      Object.entries(parsed).flatMap(([companyId, value]) => {
+        if (!value || typeof value !== "object") return [];
+        const entry = value as Record<string, unknown>;
+        return typeof entry.projectId === "string" &&
+          typeof entry.organizationId === "string" &&
+          entry.projectId.length > 0 &&
+          entry.organizationId.length > 0
+          ? [
+              [
+                companyId,
+                {
+                  projectId: entry.projectId,
+                  organizationId: entry.organizationId,
+                },
+              ],
+            ]
+          : [];
+      }),
+    );
+    return tenantMapping;
+  } catch {
+    return (tenantMapping = {});
+  }
 }
 
 export function verifyPaperclipRunBinding(
@@ -101,6 +144,14 @@ export function verifyPaperclipRunBinding(
     .digest("base64url");
   if (!equal(signature, wanted))
     return { ok: false, code: "RUN_BINDING_INVALID" };
+  const mappedTenant = consumeTenantMapping()[expected.companyId];
+  if (!mappedTenant) return { ok: false, code: "RUN_TENANT_UNMAPPED" };
+  if (
+    mappedTenant.projectId !== expected.projectId ||
+    mappedTenant.organizationId !== expected.organizationId
+  ) {
+    return { ok: false, code: "RUN_TENANT_MISMATCH" };
+  }
   return { ok: true, identity: expected.selector };
 }
 

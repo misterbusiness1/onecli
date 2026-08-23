@@ -2,6 +2,7 @@ import { createHmac } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   isAuthorizedOperatorContext,
+  resetPaperclipRunBindingForTests,
   verifyPaperclipRunBinding,
 } from "./paperclip-run-binding";
 
@@ -49,6 +50,7 @@ describe("Paperclip run binding", () => {
   afterEach(() => {
     delete process.env.PAPERCLIP_ONECLI_BINDING_SECRET;
     delete process.env.ONECLI_OPERATOR_CONTEXT_TOKEN;
+    resetPaperclipRunBindingForTests();
   });
 
   it("resolves only the identity authenticated for the exact run context", () => {
@@ -127,5 +129,13 @@ describe("Paperclip run binding", () => {
     expect(isAuthorizedOperatorContext(undefined)).toBe(false);
     expect(isAuthorizedOperatorContext("wrong")).toBe(false);
     expect(isAuthorizedOperatorContext("operator-proof")).toBe(true);
+    expect("ONECLI_OPERATOR_CONTEXT_TOKEN" in process.env).toBe(false);
+  });
+
+  it("consumes binding authority before a child runtime can inherit it", () => {
+    expect(
+      verifyPaperclipRunBinding(mint(), context, 2_000_000_000),
+    ).toMatchObject({ ok: true });
+    expect("PAPERCLIP_ONECLI_BINDING_SECRET" in process.env).toBe(false);
   });
 });

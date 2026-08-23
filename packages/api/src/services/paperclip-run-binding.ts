@@ -23,6 +23,28 @@ const equal = (left: string, right: string): boolean => {
   return a.length === b.length && timingSafeEqual(a, b);
 };
 
+let bindingSecret: string | null = null;
+let operatorContextToken: string | null = null;
+
+function consumeManagedValue(
+  key: "PAPERCLIP_ONECLI_BINDING_SECRET" | "ONECLI_OPERATOR_CONTEXT_TOKEN",
+) {
+  const configured = process.env[key]?.trim();
+  if (configured) {
+    if (key === "PAPERCLIP_ONECLI_BINDING_SECRET") bindingSecret = configured;
+    else operatorContextToken = configured;
+  }
+  delete process.env[key];
+  return key === "PAPERCLIP_ONECLI_BINDING_SECRET"
+    ? bindingSecret
+    : operatorContextToken;
+}
+
+export function resetPaperclipRunBindingForTests(): void {
+  bindingSecret = null;
+  operatorContextToken = null;
+}
+
 export function verifyPaperclipRunBinding(
   token: string | undefined,
   expected: PaperclipRunContext,
@@ -37,7 +59,7 @@ export function verifyPaperclipRunBinding(
   ) {
     return { ok: false, code: "RUN_CONTEXT_REQUIRED" };
   }
-  const secret = process.env.PAPERCLIP_ONECLI_BINDING_SECRET?.trim();
+  const secret = consumeManagedValue("PAPERCLIP_ONECLI_BINDING_SECRET");
   if (!secret) return { ok: false, code: "RUN_BINDING_UNAVAILABLE" };
   const parts = token.split(".");
   if (parts.length !== 3) return { ok: false, code: "RUN_BINDING_INVALID" };
@@ -85,6 +107,6 @@ export function verifyPaperclipRunBinding(
 export function isAuthorizedOperatorContext(
   value: string | undefined,
 ): boolean {
-  const configured = process.env.ONECLI_OPERATOR_CONTEXT_TOKEN?.trim();
+  const configured = consumeManagedValue("ONECLI_OPERATOR_CONTEXT_TOKEN");
   return Boolean(configured && value && equal(value, configured));
 }

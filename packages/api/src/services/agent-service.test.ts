@@ -18,6 +18,8 @@ const store = vi.hoisted(() => ({
   agents: [] as AgentRow[],
   created: [] as Record<string, unknown>[],
   createThrows: null as Error | null,
+  listSelect: null as Record<string, boolean> | null,
+  defaultSelect: null as Record<string, boolean> | null,
 }));
 
 vi.mock("@onecli/db", () => {
@@ -34,14 +36,36 @@ vi.mock("@onecli/db", () => {
       agent: {
         findFirst: async ({
           where,
+          select,
         }: {
-          where: { projectId: string; identifier: string };
-        }) =>
-          store.agents.find(
-            (a) =>
-              a.projectId === where.projectId &&
-              a.identifier === where.identifier,
-          ) ?? null,
+          where: {
+            projectId: string;
+            identifier?: string;
+            isDefault?: boolean;
+          };
+          select?: Record<string, boolean>;
+        }) => {
+          if (where.isDefault) {
+            store.defaultSelect = select ?? null;
+            return {
+              id: "default-agent",
+              name: "Default",
+              isDefault: true,
+              createdAt: new Date(0),
+            };
+          }
+          return (
+            store.agents.find(
+              (a) =>
+                a.projectId === where.projectId &&
+                a.identifier === where.identifier,
+            ) ?? null
+          );
+        },
+        findMany: async ({ select }: { select: Record<string, boolean> }) => {
+          store.listSelect = select;
+          return [];
+        },
         create: async ({ data }: { data: Record<string, unknown> }) => {
           if (store.createThrows) throw store.createThrows;
           store.created.push(data);
@@ -53,11 +77,15 @@ vi.mock("@onecli/db", () => {
           };
         },
       },
+      requestLog: {
+        groupBy: async () => [],
+      },
     },
   };
 });
 
-const { createAgent } = await import("./agent-service");
+const { createAgent, getDefaultAgent, listAgents } =
+  await import("./agent-service");
 const { Prisma } = await import("@onecli/db");
 
 const seedParent = (identifier: string, secretMode: string) => {
@@ -76,6 +104,18 @@ beforeEach(() => {
   store.agents = [];
   store.created = [];
   store.createThrows = null;
+  store.listSelect = null;
+  store.defaultSelect = null;
+});
+
+describe("agent read projections", () => {
+  it("never selects reusable access tokens for list or default reads", async () => {
+    await listAgents("p1");
+    await getDefaultAgent("p1");
+
+    expect(store.listSelect).not.toHaveProperty("accessToken");
+    expect(store.defaultSelect).not.toHaveProperty("accessToken");
+  });
 });
 
 describe("createAgent — always selective (attach-model step 5)", () => {

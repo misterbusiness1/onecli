@@ -17,7 +17,6 @@ export const listAgents = async (projectId: string) => {
         id: true,
         name: true,
         identifier: true,
-        accessToken: true,
         isDefault: true,
         secretMode: true,
         createdAt: true,
@@ -55,7 +54,6 @@ export const getDefaultAgent = async (projectId: string) => {
     select: {
       id: true,
       name: true,
-      accessToken: true,
       isDefault: true,
       createdAt: true,
     },

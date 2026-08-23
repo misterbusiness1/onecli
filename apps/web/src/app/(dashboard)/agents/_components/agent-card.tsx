@@ -21,7 +21,6 @@ interface AgentCardProps {
     id: string;
     name: string;
     identifier: string;
-    accessToken: string;
     isDefault: boolean;
     createdAt: Date;
     lastSeenAt: Date | null;

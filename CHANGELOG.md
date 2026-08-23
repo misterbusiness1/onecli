@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+* **gateway:** bound Paperclip runs use renewable, immediately revocable five-minute gateway leases instead of persistent agent credentials ([run-binding guide](docs/paperclip-run-binding.md))
+
 ## [1.45.0](https://github.com/onecli/onecli/compare/v1.44.0...v1.45.0) (2026-07-31)
 
 

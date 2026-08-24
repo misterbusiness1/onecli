@@ -15,6 +15,14 @@ export const googleSearchConsolePermissions: AppPermissionDefinition = {
           method: "POST",
         },
         {
+          id: "url_inspection_index_inspect",
+          name: "Inspect URL",
+          description: "Inspect a URL's indexed status in Search Console",
+          hostPattern: "searchconsole.googleapis.com",
+          pathPattern: "/v1/urlInspection/index:inspect",
+          method: "POST",
+        },
+        {
           id: "list_sites",
           name: "List sites",
           description: "List all sites in Search Console",

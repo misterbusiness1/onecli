@@ -591,7 +591,14 @@ static APP_PROVIDERS: &[AppProvider] = &[
         host_rules: &[
             HostRule {
                 pattern: HostPattern::Exact("searchconsole.googleapis.com"),
-                path_prefix: None,
+                path_prefix: Some("/v1/urlInspection/index:inspect"),
+                strategy: AuthStrategy::Bearer,
+                intercept: false,
+                credential_host_field: None,
+            },
+            HostRule {
+                pattern: HostPattern::Exact("searchconsole.googleapis.com"),
+                path_prefix: Some("/webmasters/v3/sites"),
                 strategy: AuthStrategy::Bearer,
                 intercept: false,
                 credential_host_field: None,
@@ -2188,6 +2195,25 @@ mod tests {
             result,
             Some(("google-search-console", "Google Search Console"))
         );
+    }
+
+    #[test]
+    fn google_search_console_limits_managed_oauth_to_catalog_surfaces() {
+        assert!(provider_matches_host_and_path(
+            "google-search-console",
+            "searchconsole.googleapis.com",
+            "/v1/urlInspection/index:inspect"
+        ));
+        assert!(provider_matches_host_and_path(
+            "google-search-console",
+            "searchconsole.googleapis.com",
+            "/webmasters/v3/sites/sc-domain:onecli.sh/searchAnalytics/query"
+        ));
+        assert!(!provider_matches_host_and_path(
+            "google-search-console",
+            "searchconsole.googleapis.com",
+            "/v1/other"
+        ));
     }
 
     #[test]

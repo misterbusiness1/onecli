@@ -2136,6 +2136,15 @@
       "methods": [
         "POST"
       ]
+    },
+    "url_inspection_index_inspect": {
+      "hostPattern": "searchconsole.googleapis.com",
+      "paths": [
+        "/v1/urlInspection/index:inspect"
+      ],
+      "methods": [
+        "POST"
+      ]
     }
   },
   "google-sheets": {

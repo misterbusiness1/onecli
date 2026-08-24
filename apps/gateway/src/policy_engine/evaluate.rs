@@ -298,6 +298,48 @@ mod tests {
     }
 
     #[test]
+    fn google_search_console_inspection_only_grant_is_fail_closed() {
+        let mut grant = rule("gsc-inspection-grant", 1, Action::Allow);
+        grant.identities = vec![Identity::Agent("scda".to_string())];
+        grant.targets = vec![Target::App {
+            provider: "google-search-console".to_string(),
+            tools: vec!["url_inspection_index_inspect".to_string()],
+        }];
+        let rules = vec![grant, default_rule(Action::Block)];
+        let request = |method: &str, path: &str| Request {
+            host: "searchconsole.googleapis.com".to_string(),
+            path: path.to_string(),
+            method: method.to_string(),
+            agent_id: "scda".to_string(),
+            has_injections: true,
+            is_llm_host: false,
+            winning_connection_id: None,
+        };
+
+        assert!(matches!(
+            evaluate_outcome(
+                &rules,
+                &request("POST", "/v1/urlInspection/index:inspect"),
+                None
+            ),
+            Outcome::Rule(r) if r.action == Action::Allow
+        ));
+        for (method, path) in [
+            ("POST", "/v1/other"),
+            ("PUT", "/webmasters/v3/sites/sc-domain:example.com"),
+            ("DELETE", "/webmasters/v3/sites/sc-domain:example.com"),
+        ] {
+            assert!(
+                matches!(
+                    evaluate_outcome(&rules, &request(method, path), None),
+                    Outcome::DenyDefault(_)
+                ),
+                "inspection-only grant must deny {method} {path}"
+            );
+        }
+    }
+
+    #[test]
     fn default_block_enforces_only_under_the_carve() {
         let rules = vec![default_rule(Action::Block)];
         // Uncredentialed → the carve spares it.

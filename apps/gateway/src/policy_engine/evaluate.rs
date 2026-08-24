@@ -307,6 +307,75 @@ mod tests {
         }
     }
 
+    #[test]
+    fn google_search_console_inspection_only_grant_is_fail_closed() {
+        let grant = NewRule {
+            id: "gsc-inspection-grant".to_string(),
+            logical_id: "gsc-inspection-grant".to_string(),
+            name: "Google Search Console URL Inspection".to_string(),
+            scope: Scope::Workspace,
+            priority: 1,
+            is_default: false,
+            identities: vec![Identity::Agent("scda".to_string())],
+            targets: vec![Target::App {
+                provider: "google-search-console".to_string(),
+                tools: vec!["url_inspection_index_inspect".to_string()],
+            }],
+            action: Action::Allow,
+            require_approval: false,
+            rate_limit: None,
+            rate_limit_window: None,
+            conditions: None,
+        };
+        let deny_by_default = NewRule {
+            id: "workspace-default".to_string(),
+            logical_id: "workspace-default".to_string(),
+            name: "Default Rule".to_string(),
+            scope: Scope::Workspace,
+            priority: usize::MAX,
+            is_default: true,
+            identities: Vec::new(),
+            targets: Vec::new(),
+            action: Action::Block,
+            require_approval: false,
+            rate_limit: None,
+            rate_limit_window: None,
+            conditions: None,
+        };
+        let rules = vec![grant, deny_by_default];
+        let request = |method: &str, path: &str| PolicyRequest {
+            host: "searchconsole.googleapis.com".to_string(),
+            path: path.to_string(),
+            method: method.to_string(),
+            agent_id: "scda".to_string(),
+            user_ids: Vec::new(),
+            group_ids: Vec::new(),
+            has_injections: true,
+            is_llm_host: false,
+            winning_connection_id: None,
+        };
+
+        assert_eq!(
+            evaluate_new(
+                &rules,
+                &request("POST", "/v1/urlInspection/index:inspect"),
+                None
+            ),
+            Decision::allow()
+        );
+        for (method, path) in [
+            ("POST", "/v1/other"),
+            ("PUT", "/webmasters/v3/sites/sc-domain:example.com"),
+            ("DELETE", "/webmasters/v3/sites/sc-domain:example.com"),
+        ] {
+            assert_eq!(
+                evaluate_new(&rules, &request(method, path), None),
+                Decision::block_by_default(),
+                "inspection-only grant must deny {method} {path}"
+            );
+        }
+    }
+
     /// Two rules sharing a priority resolve by `id` (lower first), NOT by
     /// insertion/DB-row order — so first-match is deterministic and agrees with
     /// `ORDER BY r.priority, r.id` and the TS evaluator. The reversed-order case

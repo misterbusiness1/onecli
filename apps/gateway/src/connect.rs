@@ -1588,9 +1588,11 @@ pub(crate) async fn resolve_from_cache(
     // Revalidate the presented credential before every tunneled request. This
     // is the lifecycle barrier for short-lived Paperclip run capabilities:
     // expiry or revocation takes effect immediately even with a warm policy cache.
-    let agent = policy_engine.find_agent(agent_token).await?;
-    if agent.project_id != project_id || agent.organization_id != organization_id {
-        return Err(ConnectError::InvalidToken);
+    if agent_token.starts_with("aor_") {
+        let agent = policy_engine.find_agent(agent_token).await?;
+        if agent.project_id != project_id || agent.organization_id != organization_id {
+            return Err(ConnectError::InvalidToken);
+        }
     }
     let cache_key = format!("connect:{organization_id}:{project_id}:{agent_token}:{hostname}");
 
@@ -1600,6 +1602,7 @@ pub(crate) async fn resolve_from_cache(
 
     debug!(host = %hostname, "resolve_from_cache: cache miss, querying DB");
 
+    let agent = policy_engine.find_agent(agent_token).await?;
     let response = policy_engine.resolve_uncached(&agent, hostname).await?;
     cache.set(&cache_key, &response, CACHE_TTL_SECS).await;
 

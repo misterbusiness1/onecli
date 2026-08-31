@@ -17,11 +17,11 @@ CREATE TABLE "paperclip_run_gateway_capabilities" (
 
 CREATE UNIQUE INDEX "paperclip_run_gateway_capabilities_token_hash_key"
     ON "paperclip_run_gateway_capabilities"("token_hash");
-CREATE UNIQUE INDEX "paperclip_run_gateway_capabilities_run_company_agent_onecli_key"
+CREATE UNIQUE INDEX "paperclip_run_gateway_capabilities_run_id_paperclip_company_key"
     ON "paperclip_run_gateway_capabilities"("run_id", "paperclip_company_id", "paperclip_agent_id", "agent_id");
-CREATE INDEX "paperclip_run_gateway_capabilities_run_company_agent_idx"
+CREATE INDEX "paperclip_run_gateway_capabilities_run_id_paperclip_company_idx"
     ON "paperclip_run_gateway_capabilities"("run_id", "paperclip_company_id", "paperclip_agent_id");
-CREATE INDEX "paperclip_run_gateway_capabilities_agent_expires_idx"
+CREATE INDEX "paperclip_run_gateway_capabilities_agent_id_expires_at_idx"
     ON "paperclip_run_gateway_capabilities"("agent_id", "expires_at");
 
 ALTER TABLE "paperclip_run_gateway_capabilities"

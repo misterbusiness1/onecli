@@ -5,9 +5,9 @@
 //! all other tables are read-only (Prisma / Next.js remains the writer).
 
 use anyhow::{Context, Result};
+use ring::digest::{digest, SHA256};
 use sqlx::postgres::PgPoolOptions;
 use sqlx::{types::Json, FromRow, PgPool};
-use ring::digest::{digest, SHA256};
 
 /// Create a PostgreSQL connection pool from `DATABASE_URL`.
 pub(crate) async fn create_pool(database_url: &str) -> Result<PgPool> {

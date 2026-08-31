@@ -20,12 +20,12 @@ import {
   isAuthorizedOperatorContext,
   resolvePaperclipRunTenant,
   verifyPaperclipRunBinding,
-} from "../services/paperclip-run-binding.js";
+} from "../services/paperclip-run-binding";
 import {
   mintPaperclipRunGatewayCapability,
   refreshPaperclipRunGatewayCapability,
   revokePaperclipRunGatewayCapability,
-} from "../services/paperclip-run-gateway-capability.js";
+} from "../services/paperclip-run-gateway-capability";
 
 /**
  * A `where` selecting exactly the secrets this agent can be handed: the

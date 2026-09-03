@@ -1,8 +1,11 @@
 name: CI
 
 on:
+  workflow_dispatch:
   pull_request:
-    branches: [main]
+    branches:
+      - main
+      - occ/v1.45.0-pathscope-baseline
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}

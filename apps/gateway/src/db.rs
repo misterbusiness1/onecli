@@ -5,6 +5,7 @@
 //! all other tables are read-only (Prisma / Next.js remains the writer).
 
 use anyhow::{Context, Result};
+use ring::digest::{digest, SHA256};
 use sqlx::postgres::PgPoolOptions;
 use sqlx::{types::Json, FromRow, PgPool};
 
@@ -286,6 +287,27 @@ pub(crate) async fn find_agent_by_token(
     pool: &PgPool,
     access_token: &str,
 ) -> Result<Option<AgentRow>> {
+    if access_token.starts_with("aor_") {
+        let token_hash = hex::encode(digest(&SHA256, access_token.as_bytes()).as_ref());
+        return sqlx::query_as::<_, AgentRow>(
+            r#"SELECT a.id, a.name, a.identifier, a.project_id, p.organization_id, o.subscription_status
+               FROM paperclip_run_gateway_capabilities c
+               JOIN agents a ON c.agent_id = a.id
+               JOIN projects p ON a.project_id = p.id
+               JOIN organizations o ON p.organization_id = o.id
+               WHERE c.token_hash = $1
+                 AND c.revoked_at IS NULL
+                 AND c.expires_at > NOW()
+                 AND c.project_id = a.project_id
+                 AND c.project_id = p.id
+                 AND c.organization_id = p.organization_id
+               LIMIT 1"#,
+        )
+        .bind(token_hash)
+        .fetch_optional(pool)
+        .await
+        .context("querying active Paperclip run gateway capability");
+    }
     sqlx::query_as::<_, AgentRow>(
         r#"SELECT a.id, a.name, a.identifier, a.project_id, p.organization_id, o.subscription_status
            FROM agents a

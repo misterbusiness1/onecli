@@ -126,6 +126,9 @@ const MAX_DEFAULT_INTERCEPT_BODY: usize = 64 * 1024;
 /// header injection past the approval hold, which changes what `pre_forward`
 /// inspects for every request — more risk than the case is worth. Requests
 /// blocked by POLICY, the ones that matter, never reach here.
+// The error is the gateway's response type and is returned directly to Hyper;
+// boxing it here would add allocation and unwrap work to the request hot path.
+#[allow(clippy::result_large_err)]
 pub(super) async fn materialize_injections<'a>(
     rules: &'a ResolvedRules,
     engine: &crate::connect::PolicyEngine,

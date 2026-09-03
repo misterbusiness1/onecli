@@ -1,4 +1,4 @@
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
 import { db, type Prisma } from "@onecli/db";
 import type { ApiEnv } from "../types";
 import { authMiddleware, requireProjectId } from "../middleware/auth";
@@ -16,6 +16,16 @@ import { loadInjectionRules } from "../services/policy-simulate/load-rules";
 import { resolvePrincipalSet } from "../services/policy-simulate/principal-set";
 import { getCrypto } from "../providers";
 import { logger } from "../lib/logger";
+import {
+  isAuthorizedOperatorContext,
+  resolvePaperclipRunTenant,
+  verifyPaperclipRunBinding,
+} from "../services/paperclip-run-binding";
+import {
+  mintPaperclipRunGatewayCapability,
+  refreshPaperclipRunGatewayCapability,
+  revokePaperclipRunGatewayCapability,
+} from "../services/paperclip-run-gateway-capability";
 
 /**
  * A `where` selecting exactly the secrets this agent can be handed: the
@@ -121,7 +131,54 @@ const markAgentConnected = async (projectId: string) => {
 
 export const containerConfigRoutes = () => {
   const app = new Hono<ApiEnv>();
-  app.use("*", authMiddleware);
+  app.use("*", async (c, next) => {
+    const binding = c.req.header("x-paperclip-onecli-run-binding");
+    const runId = c.req.header("x-paperclip-run-id") ?? "";
+    const agentId = c.req.header("x-paperclip-agent-id") ?? "";
+    const companyId = c.req.header("x-paperclip-company-id") ?? "";
+    const selector = c.req.query("agent") ?? "";
+    if (binding || runId || agentId || companyId) {
+      const tenant = resolvePaperclipRunTenant(companyId);
+      const persistedProject = tenant
+        ? await db.project.findUnique({
+            where: { id: tenant.projectId },
+            select: { id: true, organizationId: true },
+          })
+        : null;
+      const verified =
+        persistedProject &&
+        (!tenant!.organizationId ||
+          tenant!.organizationId === persistedProject.organizationId)
+          ? verifyPaperclipRunBinding(binding, {
+              runId,
+              agentId,
+              companyId,
+              selector,
+              projectId: persistedProject.id,
+              organizationId: persistedProject.organizationId,
+            })
+          : { ok: false as const, code: "RUN_TENANT_UNMAPPED" };
+      if (!verified.ok) {
+        logger.warn(
+          { code: verified.code, route: "GET /v1/container-config" },
+          "Paperclip run binding rejected before authentication and agent lookup",
+        );
+        return c.json(
+          { error: "Authenticated run binding rejected", code: verified.code },
+          403,
+        );
+      }
+      c.set("auth", {
+        userId: `paperclip-run:${agentId}`,
+        userEmail: "paperclip-run@internal.invalid",
+        projectId: persistedProject!.id,
+        organizationId: persistedProject!.organizationId,
+        scope: "project",
+      });
+      return next();
+    }
+    return authMiddleware(c, next);
+  });
 
   /**
    * GET /container-config
@@ -135,12 +192,54 @@ export const containerConfigRoutes = () => {
       const auth = c.get("auth");
       const projectId = requireProjectId(auth);
 
-      const agentIdentifier = c.req.query("agent");
+      let agentIdentifier = c.req.query("agent");
+      const binding = c.req.header("x-paperclip-onecli-run-binding");
+      const hasAgentRunContext = Boolean(
+        binding ||
+        c.req.header("x-paperclip-run-id") ||
+        c.req.header("x-paperclip-agent-id") ||
+        c.req.header("x-paperclip-company-id"),
+      );
+      if (hasAgentRunContext) {
+        const verified = verifyPaperclipRunBinding(binding, {
+          runId: c.req.header("x-paperclip-run-id") ?? "",
+          agentId: c.req.header("x-paperclip-agent-id") ?? "",
+          companyId: c.req.header("x-paperclip-company-id") ?? "",
+          selector: agentIdentifier ?? "",
+          projectId,
+          organizationId: auth.organizationId,
+        });
+        if (!verified.ok) {
+          logger.warn(
+            { code: verified.code, route: "GET /v1/container-config" },
+            "Paperclip run binding rejected before agent lookup",
+          );
+          return c.json(
+            {
+              error: "Authenticated run binding rejected",
+              code: verified.code,
+            },
+            403,
+          );
+        }
+        agentIdentifier = verified.identity;
+      } else if (
+        !isAuthorizedOperatorContext(c.req.header("x-onecli-operator-context"))
+      ) {
+        return c.json(
+          {
+            error:
+              "Explicit operator authorization or authenticated agent run is required",
+            code: "OPERATOR_CONTEXT_REQUIRED",
+          },
+          403,
+        );
+      }
 
       let agent = agentIdentifier
         ? await db.agent.findFirst({
             where: { projectId, identifier: agentIdentifier },
-            select: { id: true, accessToken: true },
+            select: { id: true, accessToken: !hasAgentRunContext },
           })
         : await db.agent.findFirst({
             where: { projectId, isDefault: true },
@@ -183,8 +282,6 @@ export const containerConfigRoutes = () => {
           select: { id: true, accessToken: true },
         });
       }
-
-      const gatewayUrl = `http://x:${agent.accessToken}@${GATEWAY_BASE_URL}`;
 
       const caCertificate = loadCaCertificate();
       if (!caCertificate) {
@@ -276,6 +373,23 @@ export const containerConfigRoutes = () => {
       // Fire-and-forget: mark agent as connected
       markAgentConnected(projectId).catch(() => {});
 
+      // Mint only after every fallible config lookup has succeeded, so a 4xx/5xx
+      // response never leaves an unused active run credential behind.
+      const gatewayCredential = hasAgentRunContext
+        ? await mintPaperclipRunGatewayCapability({
+            runId: c.req.header("x-paperclip-run-id")!,
+            companyId: c.req.header("x-paperclip-company-id")!,
+            paperclipAgentId: c.req.header("x-paperclip-agent-id")!,
+            agentId: agent.id,
+            projectId,
+            organizationId: auth.organizationId,
+          })
+        : { token: agent.accessToken, expiresAt: null };
+      if (!gatewayCredential.token) {
+        return c.json({ error: "Gateway credential unavailable" }, 503);
+      }
+      const gatewayUrl = `http://x:${gatewayCredential.token}@${GATEWAY_BASE_URL}`;
+
       return c.json({
         env: {
           // Proxy -- uppercase + lowercase (some tools only check one)
@@ -305,6 +419,56 @@ export const containerConfigRoutes = () => {
       return c.json({ error: "Internal server error" }, 500);
     }
   });
+
+  const updateRunCapability = async (
+    c: Context<ApiEnv>,
+    action: "refresh" | "revoke",
+  ) => {
+    const auth = c.get("auth");
+    const projectId = requireProjectId(auth);
+    const context = {
+      runId: c.req.header("x-paperclip-run-id") ?? "",
+      agentId: c.req.header("x-paperclip-agent-id") ?? "",
+      companyId: c.req.header("x-paperclip-company-id") ?? "",
+      selector: c.req.query("agent") ?? "",
+      projectId,
+      organizationId: auth.organizationId,
+    };
+    const verified = verifyPaperclipRunBinding(
+      c.req.header("x-paperclip-onecli-run-binding"),
+      context,
+    );
+    if (!verified.ok)
+      return c.json(
+        { error: "Authenticated run binding rejected", code: verified.code },
+        403,
+      );
+    const scope = {
+      runId: context.runId,
+      companyId: context.companyId,
+      paperclipAgentId: context.agentId,
+      selector: verified.identity,
+      projectId,
+      organizationId: auth.organizationId,
+    };
+    if (action === "refresh") {
+      const refreshed = await refreshPaperclipRunGatewayCapability(scope);
+      return refreshed
+        ? c.json({ expiresAt: refreshed.toISOString() })
+        : c.json(
+            {
+              error: "Active run capability not found",
+              code: "RUN_CAPABILITY_INACTIVE",
+            },
+            409,
+          );
+    }
+    const revoked = await revokePaperclipRunGatewayCapability(scope);
+    return c.json({ revoked });
+  };
+
+  app.post("/run-capability/refresh", (c) => updateRunCapability(c, "refresh"));
+  app.post("/run-capability/revoke", (c) => updateRunCapability(c, "revoke"));
 
   return app;
 };

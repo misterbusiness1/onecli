@@ -17,6 +17,7 @@ export const googleAnalytics: AppDefinition = {
       "email",
       "profile",
       "https://www.googleapis.com/auth/analytics",
+      "https://www.googleapis.com/auth/analytics.readonly",
     ],
     permissions: [
       {
@@ -24,6 +25,12 @@ export const googleAnalytics: AppDefinition = {
         name: "Analytics",
         description: "Access analytics data and reports",
         access: "write",
+      },
+      {
+        scope: "https://www.googleapis.com/auth/analytics.readonly",
+        name: "Analytics read access",
+        description: "Read Analytics property details and reports",
+        access: "read",
       },
       {
         scope: "https://www.googleapis.com/auth/userinfo.email",

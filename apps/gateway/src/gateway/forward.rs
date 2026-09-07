@@ -291,6 +291,20 @@ pub(crate) async fn forward_request(
         ));
     }
 
+    // Do not let method-override headers widen a GET-only provider boundary.
+    // This sits before every edition's policy evaluator and upstream forwarding.
+    if policy_host.eq_ignore_ascii_case("analyticsadmin.googleapis.com")
+        && (!crate::apps::analytics_admin_request_allowed(policy_host, method.as_str(), &path)
+            || !crate::apps::analytics_admin_headers_allowed(policy_host, req.headers()))
+    {
+        return Ok(response::blocked_by_policy(
+            method.as_str(),
+            &path,
+            "Analytics Admin fixed read-only boundary",
+            proxy_ctx.project_id.as_deref(),
+        ));
+    }
+
     // The first-match engine over the published `policy_rules_v2` is authoritative.
     // `policy_host` is the pre-rewrite rule-match host; `is_llm_host(host)` is the
     // effective host for the deny-default carve.

@@ -100,6 +100,9 @@ pub(super) fn app_target_matches(
     body: Option<&[u8]>,
     conditions: &Option<serde_json::Value>,
 ) -> bool {
+    if !crate::apps::analytics_admin_request_allowed(request_host, request_method, request_path) {
+        return false;
+    }
     let Some(provider_tools) = catalog().get(provider) else {
         return false;
     };
@@ -328,14 +331,161 @@ mod tests {
         ));
     }
 
-    /// The invariant (enforcement ⊇ injection): for EVERY provider the gateway
-    /// injects credentials for, a WHOLE-APP rule for that provider must match a
-    /// request on each host it injects on. This is the structural guarantee that
+    #[test]
+    fn google_analytics_admin_actions_are_bounded_and_independent() {
+        let admin_host = "analyticsadmin.googleapis.com";
+        let data_host = "analyticsdata.googleapis.com";
+
+        let legacy_data_actions = ["run_report", "batch_run_reports", "get_metadata"];
+        for path in [
+            "/v1beta/properties/308097416/dataStreams/3361045752",
+            "/v1beta/properties/308097416",
+        ] {
+            assert!(!matches(
+                "google-analytics",
+                &legacy_data_actions,
+                admin_host,
+                "GET",
+                path
+            ));
+        }
+
+        assert!(matches(
+            "google-analytics",
+            &["get_data_stream_details"],
+            admin_host,
+            "GET",
+            "/v1beta/properties/308097416/dataStreams/3361045752?fields=name"
+        ));
+        assert!(!matches(
+            "google-analytics",
+            &["get_data_stream_details"],
+            admin_host,
+            "GET",
+            "/v1beta/properties/308097416/dataStreams/3361045752/extra"
+        ));
+        assert!(!matches(
+            "google-analytics",
+            &["get_data_stream_details"],
+            admin_host,
+            "GET",
+            "/v1beta/properties/308097416"
+        ));
+
+        assert!(matches(
+            "google-analytics",
+            &["get_property_details"],
+            admin_host,
+            "GET",
+            "/v1beta/properties/308097416"
+        ));
+        for path in [
+            "/v1beta/properties",
+            "/v1beta/properties/",
+            "/v1beta/properties/other",
+            "/v1beta/properties/308097415",
+            "/v1beta/properties/308097416/",
+            "/v1beta/properties/308097416/extra",
+            "/v1beta/properties/308097416/dataStreams",
+            "/v1beta/properties%2F308097416",
+            "/v1beta/properties%2f308097416",
+            "/v1beta/properties/308097416%2FdataStreams",
+            "/v1beta/properties/308097416%2fdataStreams",
+        ] {
+            assert!(!matches(
+                "google-analytics",
+                &["get_property_details"],
+                admin_host,
+                "GET",
+                path
+            ));
+        }
+
+        for method in ["POST", "PUT", "PATCH", "DELETE"] {
+            assert!(!matches(
+                "google-analytics",
+                &["get_property_details"],
+                admin_host,
+                method,
+                "/v1beta/properties/308097416"
+            ));
+        }
+
+        assert!(!matches(
+            "google-analytics",
+            &["get_property_details"],
+            data_host,
+            "GET",
+            "/v1beta/properties/308097416"
+        ));
+        for host in [
+            "analytics.googleapis.com",
+            "admin.googleapis.com",
+            "api.github.com",
+            "evil.analyticsadmin.googleapis.com",
+        ] {
+            assert!(!matches(
+                "google-analytics",
+                &["get_property_details"],
+                host,
+                "GET",
+                "/v1beta/properties/308097416"
+            ));
+        }
+        assert!(!matches(
+            "google-analytics",
+            &["get_property_details"],
+            admin_host,
+            "GET",
+            "/v1beta/properties/308097416/dataStreams/3361045752"
+        ));
+        assert!(!matches(
+            "google-analytics",
+            &["get_metadata"],
+            admin_host,
+            "GET",
+            "/v1beta/properties/308097416"
+        ));
+        assert!(matches(
+            "google-analytics",
+            &["get_metadata"],
+            data_host,
+            "GET",
+            "/v1beta/properties/308097416/metadata"
+        ));
+
+        for host in [data_host] {
+            assert!(matches(
+                "google-analytics",
+                &[],
+                host,
+                "DELETE",
+                "/uncataloged/whole-app-path"
+            ));
+        }
+        for host in [
+            "analytics.googleapis.com",
+            "evil.analyticsadmin.googleapis.com",
+            "googleapis.com",
+        ] {
+            assert!(!matches(
+                "google-analytics",
+                &[],
+                host,
+                "GET",
+                "/v1beta/properties/308097416/dataStreams/3361045752"
+            ));
+        }
+    }
+
+    /// Whole-app grants cover each injection host, subject to explicit provider
+    /// request boundaries. Analytics Admin is intentionally GET/resource-only;
+    /// its rejection must survive even a whole-app grant. This is the structural guarantee that
     /// the two host lists can't diverge into a bypass again — it fails if the
     /// engine regresses to catalog-only matching, or an injection host is added
     /// that the app-target matcher can't reach.
     #[test]
-    fn whole_app_rules_cover_the_entire_injection_surface() {
+    fn whole_app_rules_cover_the_permitted_injection_surface() {
         for (provider, host, path) in crate::apps::injection_surface_samples() {
             // Only providers with a permission catalog are targetable by an
             // app/connection rule (no tools → no rule); the rest have no
@@ -343,9 +493,10 @@ mod tests {
             if catalog().get(provider).is_none() {
                 continue;
             }
-            assert!(
+            assert_eq!(
                 app_target_matches(provider, &[], &host, "POST", &path, None, &None),
-                "whole-app rule for `{provider}` must cover its injection host `{host}` (path `{path}`)"
+                crate::apps::analytics_admin_request_allowed(&host, "POST", &path),
+                "whole-app `{provider}` must honor the provider boundary on `{host}` `{path}`"
             );
         }
     }

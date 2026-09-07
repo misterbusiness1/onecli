@@ -233,7 +233,10 @@ const expectedVerdicts = (
                 ? "approval"
                 : `allow|${outcome.rule.rateLimit ?? ""}`,
           );
-        } else if (outcome.kind === "denyDefault") {
+        } else if (
+          outcome.kind === "denyDefault" ||
+          outcome.kind === "providerBoundary"
+        ) {
           verdicts.add("block");
         } else {
           verdicts.add(outcome.managed ? "allow|" : "unmanaged");

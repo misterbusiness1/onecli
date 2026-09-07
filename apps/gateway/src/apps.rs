@@ -570,13 +570,22 @@ static APP_PROVIDERS: &[AppProvider] = &[
     AppProvider {
         provider: "google-analytics",
         display_name: "Google Analytics",
-        host_rules: &[HostRule {
-            pattern: HostPattern::Exact("analyticsdata.googleapis.com"),
-            path_prefix: None,
-            strategy: AuthStrategy::Bearer,
-            intercept: false,
-            credential_host_field: None,
-        }],
+        host_rules: &[
+            HostRule {
+                pattern: HostPattern::Exact("analyticsdata.googleapis.com"),
+                path_prefix: None,
+                strategy: AuthStrategy::Bearer,
+                intercept: false,
+                credential_host_field: None,
+            },
+            HostRule {
+                pattern: HostPattern::Exact("analyticsadmin.googleapis.com"),
+                path_prefix: Some("/v1beta/properties/308097416"),
+                strategy: AuthStrategy::Bearer,
+                intercept: false,
+                credential_host_field: None,
+            },
+        ],
         refresh: Some(&GOOGLE_REFRESH),
         metadata_headers: &[],
         credential_headers: &[],
@@ -2170,6 +2179,10 @@ mod tests {
             vec!["google-analytics"]
         );
         assert_eq!(
+            providers_for_host("analyticsadmin.googleapis.com"),
+            vec!["google-analytics"]
+        );
+        assert_eq!(
             providers_for_host("searchconsole.googleapis.com"),
             vec!["google-search-console"]
         );
@@ -2259,6 +2272,7 @@ mod tests {
             ("google-classroom", "classroom.googleapis.com"),
             ("google-admin", "admin.googleapis.com"),
             ("google-analytics", "analyticsdata.googleapis.com"),
+            ("google-analytics", "analyticsadmin.googleapis.com"),
             ("google-search-console", "searchconsole.googleapis.com"),
             ("google-meet", "meet.googleapis.com"),
             ("google-photos", "photoslibrary.googleapis.com"),
@@ -3301,5 +3315,114 @@ mod tests {
     #[test]
     fn normalize_host_empty() {
         assert_eq!(normalize_host(""), "");
+    }
+}
+
+/// Oxford Analytics Admin is a fixed read-only capability. Enforce before
+/// policy defaults or whole-app grants so adding this host never adds writes.
+pub(crate) fn analytics_admin_request_allowed(host: &str, method: &str, path: &str) -> bool {
+    if !host.eq_ignore_ascii_case("analyticsadmin.googleapis.com") {
+        return true;
+    }
+    if method != "GET" || path.contains('#') {
+        return false;
+    }
+    let (resource, query) = path.split_once('?').unwrap_or((path, ""));
+    if !matches!(
+        resource,
+        "/v1beta/properties/308097416" | "/v1beta/properties/308097416/dataStreams/3361045752"
+    ) {
+        return false;
+    }
+    form_urlencoded::parse(query.as_bytes()).all(|(key, _)| {
+        matches!(
+            key.as_ref(),
+            "alt" | "$alt" | "fields" | "$fields" | "prettyPrint" | "$prettyPrint" | "$.xgafv"
+        )
+    })
+}
+
+/// HTTP method overrides cannot bypass the provider's GET-only boundary.
+pub(crate) fn analytics_admin_headers_allowed(host: &str, headers: &hyper::HeaderMap) -> bool {
+    !host.eq_ignore_ascii_case("analyticsadmin.googleapis.com")
+        || ![
+            "x-http-method-override",
+            "x-http-method",
+            "x-method-override",
+        ]
+        .iter()
+        .any(|name| headers.contains_key(*name))
+}
+
+#[cfg(test)]
+mod analytics_admin_boundary_tests {
+    use super::*;
+    #[test]
+    fn admin_guard_rejects_method_override_headers_case_insensitively() {
+        for name in [
+            "X-HTTP-Method-Override",
+            "x-http-method",
+            "X-Method-Override",
+        ] {
+            let mut headers = hyper::HeaderMap::new();
+            headers.insert(
+                hyper::header::HeaderName::from_bytes(name.as_bytes()).unwrap(),
+                hyper::header::HeaderValue::from_static("DELETE"),
+            );
+            assert!(!analytics_admin_headers_allowed(
+                "analyticsadmin.googleapis.com",
+                &headers
+            ));
+            assert!(!analytics_admin_headers_allowed(
+                "ANALYTICSADMIN.GOOGLEAPIS.COM",
+                &headers
+            ));
+            assert!(analytics_admin_headers_allowed(
+                "analyticsdata.googleapis.com",
+                &headers
+            ));
+        }
+        assert!(analytics_admin_headers_allowed(
+            "analyticsadmin.googleapis.com",
+            &hyper::HeaderMap::new()
+        ));
+    }
+    #[test]
+    fn admin_guard_accepts_only_fixed_get_resources_and_safe_sdk_query_parameters() {
+        let host = "analyticsadmin.googleapis.com";
+        for path in [
+            "/v1beta/properties/308097416",
+            "/v1beta/properties/308097416/dataStreams/3361045752",
+            "/v1beta/properties/308097416?%24alt=json%3Benum-encoding%3Dint&%24fields=name",
+        ] {
+            assert!(analytics_admin_request_allowed(host, "GET", path));
+            for method in ["POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"] {
+                assert!(!analytics_admin_request_allowed(host, method, path));
+            }
+        }
+        for path in [
+            "/v1beta/accountSummaries",
+            "/v1beta/properties",
+            "/v1beta/properties/308097416/",
+            "/v1beta/properties/308097416/accessBindings",
+            "/v1beta/properties/308097416/dataStreams",
+            "/v1beta/properties/308097416/dataStreams/3361045752/extra",
+            "/v1beta/properties/308097416%2FaccessBindings",
+            "/v1beta/properties/308097416?httpMethod=POST",
+            "/v1beta/properties/308097416?unknown=1",
+            "/v1beta/properties/308097416#fragment",
+        ] {
+            assert!(!analytics_admin_request_allowed(host, "GET", path));
+        }
+        assert!(analytics_admin_request_allowed(
+            "analyticsdata.googleapis.com",
+            "POST",
+            "/any-existing-data-path"
+        ));
+        assert!(analytics_admin_request_allowed(
+            "api.github.com",
+            "PATCH",
+            "/any-existing-github-path"
+        ));
     }
 }

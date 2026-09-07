@@ -126,6 +126,10 @@ pub(super) fn evaluate_outcome<'a>(
     request: &Request,
     body: Option<&[u8]>,
 ) -> Outcome<'a> {
+    if !crate::apps::analytics_admin_request_allowed(&request.host, &request.method, &request.path)
+    {
+        return Outcome::ProviderBoundary;
+    }
     if let Some(rule) = first_match(rules, request, body) {
         return Outcome::Rule(rule);
     }
@@ -188,6 +192,89 @@ mod tests {
             has_injections: true,
             ..request()
         }
+    }
+
+    #[test]
+    fn analytics_admin_boundary_precedes_all_grants_and_permissive_defaults() {
+        let mut full = rule("full-analytics", 0, Action::Allow);
+        full.targets = vec![Target::App {
+            provider: "google-analytics".into(),
+            tools: vec![],
+        }];
+        let mut wildcard = rule("wildcard", 0, Action::Allow);
+        wildcard.targets = vec![Target::Network {
+            host_pattern: "*".into(),
+            path_pattern: None,
+            method: None,
+        }];
+        let mut secret = rule("secret", 0, Action::Allow);
+        secret.targets = vec![Target::Secret {
+            host_patterns: vec!["analyticsadmin.googleapis.com".into()],
+        }];
+        let mut connection = rule("connection", 0, Action::Allow);
+        connection.targets = vec![Target::Connection {
+            id: "synthetic".into(),
+            provider: "google-analytics".into(),
+            tools: vec![],
+        }];
+        for rules in [
+            vec![full],
+            vec![wildcard],
+            vec![secret],
+            vec![connection],
+            vec![default_rule(Action::Allow)],
+            vec![],
+        ] {
+            for (method, path) in [
+                ("DELETE", "/v1beta/properties/308097416"),
+                ("POST", "/v1beta/properties/308097416"),
+                ("PATCH", "/v1beta/properties/308097416"),
+                ("GET", "/v1beta/properties/308097416/accessBindings"),
+                ("GET", "/v1beta/properties/308097415"),
+                ("GET", "/v1beta/properties/308097416/dataStreams/3361045753"),
+                ("GET", "/v1beta/properties/308097416?_method=DELETE"),
+                ("GET", "/v1beta/properties%2F308097416"),
+            ] {
+                let req = Request {
+                    host: "analyticsadmin.googleapis.com".into(),
+                    method: method.into(),
+                    path: path.into(),
+                    winning_connection_id: Some("synthetic".into()),
+                    ..request()
+                };
+                assert!(matches!(
+                    evaluate_outcome(&rules, &req, None),
+                    Outcome::ProviderBoundary
+                ));
+            }
+        }
+        let mut full = rule("full-analytics", 0, Action::Allow);
+        full.targets = vec![Target::App {
+            provider: "google-analytics".into(),
+            tools: vec![],
+        }];
+        for path in [
+            "/v1beta/properties/308097416",
+            "/v1beta/properties/308097416/dataStreams/3361045752?%24alt=json%3Benum-encoding%3Dint",
+        ] {
+            let req = Request {
+                host: "analyticsadmin.googleapis.com".into(),
+                path: path.into(),
+                ..request()
+            };
+            assert!(
+                matches!(evaluate_outcome(std::slice::from_ref(&full), &req, None), Outcome::Rule(r) if r.action == Action::Allow)
+            );
+        }
+        let req = Request {
+            host: "analyticsdata.googleapis.com".into(),
+            path: "/previously-uncataloged-data-flow".into(),
+            method: "POST".into(),
+            ..request()
+        };
+        assert!(
+            matches!(evaluate_outcome(&[full], &req, None), Outcome::Rule(r) if r.action == Action::Allow)
+        );
     }
 
     /// The per-account law, all four directions: a `Connection` target matches

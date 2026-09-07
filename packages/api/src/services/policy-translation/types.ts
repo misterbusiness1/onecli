@@ -64,6 +64,7 @@ export interface Decision {
  * to name the deciding rule. Mirrors the gateway's `Outcome` (evaluate.rs).
  */
 export type PolicyOutcome =
+  | { kind: "providerBoundary"; provider: "google-analytics" }
   /** An explicit rule decided (its action/modifiers are the verdict). */
   | { kind: "rule"; rule: NewRule }
   /** A Default Rule's Block decided — org-first when both levels block. */

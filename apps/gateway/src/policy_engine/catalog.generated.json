@@ -1448,6 +1448,15 @@
         "POST"
       ]
     },
+    "get_data_stream_details": {
+      "hostPattern": "analyticsadmin.googleapis.com",
+      "paths": [
+        "/v1beta/properties/308097416/dataStreams/3361045752"
+      ],
+      "methods": [
+        "GET"
+      ]
+    },
     "get_metadata": {
       "hostPattern": "analyticsdata.googleapis.com",
       "paths": [
@@ -1455,6 +1464,24 @@
       ],
       "methods": [
         "GET"
+      ]
+    },
+    "get_property_details": {
+      "hostPattern": "analyticsadmin.googleapis.com",
+      "paths": [
+        "/v1beta/properties/308097416"
+      ],
+      "methods": [
+        "GET"
+      ]
+    },
+    "run_realtime_report": {
+      "hostPattern": "analyticsdata.googleapis.com",
+      "paths": [
+        "/v1beta/properties/308097416:runRealtimeReport"
+      ],
+      "methods": [
+        "POST"
       ]
     },
     "run_report": {

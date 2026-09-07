@@ -139,6 +139,14 @@ pub(crate) async fn evaluate(
     cache: &dyn CacheStore,
     v2: &PolicyV2Rules,
 ) -> (PolicyDecision, Option<MatchedRule>) {
+    if !crate::apps::analytics_admin_request_allowed(strip_port(host), method, path) {
+        return (
+            PolicyDecision::Blocked {
+                rule_name: "Analytics Admin fixed read-only boundary".to_string(),
+            },
+            None,
+        );
+    }
     let (Some(org_id), Some(project_id), Some(agent_id)) = (
         proxy_ctx.organization_id.as_deref(),
         proxy_ctx.project_id.as_deref(),
@@ -165,6 +173,12 @@ pub(crate) async fn evaluate(
         scope: "project".to_string(),
     };
     match evaluate_outcome(&rules, &request, body) {
+        Outcome::ProviderBoundary => (
+            PolicyDecision::Blocked {
+                rule_name: "Analytics Admin fixed read-only boundary".to_string(),
+            },
+            None,
+        ),
         Outcome::Rule(rule) => (
             decision_for_rule(rule, org_id, project_id, agent_token, cache).await,
             Some(matched_of(rule)),

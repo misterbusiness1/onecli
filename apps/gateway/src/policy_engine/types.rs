@@ -125,6 +125,7 @@ impl Request {
 /// project Default Rule's enforced Block (carrying THAT rule, so telemetry can
 /// attribute it — always concrete, never anonymous), or a plain allow.
 pub(super) enum Outcome<'a> {
+    ProviderBoundary,
     Rule(&'a Rule),
     DenyDefault(&'a Rule),
     Allow,

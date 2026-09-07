@@ -3342,13 +3342,14 @@ pub(crate) fn analytics_admin_request_allowed(host: &str, method: &str, path: &s
     })
 }
 
-/// HTTP method overrides cannot bypass the provider's GET-only boundary.
+/// Method overrides and protocol upgrades are outside the Admin read contract.
 pub(crate) fn analytics_admin_headers_allowed(host: &str, headers: &hyper::HeaderMap) -> bool {
     !host.eq_ignore_ascii_case("analyticsadmin.googleapis.com")
         || ![
             "x-http-method-override",
             "x-http-method",
             "x-method-override",
+            "upgrade",
         ]
         .iter()
         .any(|name| headers.contains_key(*name))
@@ -3357,6 +3358,27 @@ pub(crate) fn analytics_admin_headers_allowed(host: &str, headers: &hyper::Heade
 #[cfg(test)]
 mod analytics_admin_boundary_tests {
     use super::*;
+    #[test]
+    fn admin_guard_rejects_upgrades_without_changing_other_providers() {
+        for protocol in ["websocket", "WebSocket", "h2c"] {
+            let mut headers = hyper::HeaderMap::new();
+            headers.insert("upgrade", protocol.parse().unwrap());
+            headers.insert("connection", "keep-alive, Upgrade".parse().unwrap());
+            for host in [
+                "analyticsadmin.googleapis.com",
+                "ANALYTICSADMIN.GOOGLEAPIS.COM",
+            ] {
+                assert!(!analytics_admin_headers_allowed(host, &headers));
+            }
+            for host in [
+                "analyticsdata.googleapis.com",
+                "api.openai.com",
+                "example.com",
+            ] {
+                assert!(analytics_admin_headers_allowed(host, &headers));
+            }
+        }
+    }
     #[test]
     fn admin_guard_rejects_method_override_headers_case_insensitively() {
         for name in [

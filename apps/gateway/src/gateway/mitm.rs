@@ -105,6 +105,17 @@ pub(super) async fn mitm(
                     // Re-resolve rules from cache on each request so that
                     // secret/rule changes take effect without a reconnect.
                     let hostname = super::strip_port(&host);
+                    // WebSocket upgrades dispatch around forward_request below.
+                    // Enforce Admin's no-upgrade/no-method-override contract
+                    // before either forwarding leg or credential resolution.
+                    if !crate::apps::analytics_admin_headers_allowed(hostname, req.headers()) {
+                        return Ok(response::blocked_by_policy(
+                            req.method().as_str(),
+                            request_path.as_deref().unwrap_or("/"),
+                            "Analytics Admin read-only boundary",
+                            ctx.project_id.as_deref(),
+                        ));
+                    }
                     match resolve_rules(
                         &ctx,
                         hostname,

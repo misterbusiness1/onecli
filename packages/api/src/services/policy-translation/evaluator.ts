@@ -1,3 +1,4 @@
+import { analyticsAdminRequestAllowed } from "../../apps/app-permissions/google-analytics-boundary";
 import { endpointMatches } from "./endpoint-match";
 import { hostMatches } from "../../lib/path-match";
 import { strictnessRank } from "./strictness";
@@ -162,6 +163,11 @@ export const evaluatePolicyOutcome = (
   rules: NewRule[],
   request: PolicyRequest,
 ): PolicyOutcome => {
+  if (
+    !analyticsAdminRequestAllowed(request.host, request.method, request.path)
+  ) {
+    return { kind: "providerBoundary", provider: "google-analytics" };
+  }
   const orgDefault = rules.find(
     (r) => r.isDefault && r.scope === "organization",
   );
@@ -242,6 +248,8 @@ export const evaluatePolicyOutcome = (
 /** Collapse an attributed outcome to the bare corpus-contract `Decision`. */
 export const outcomeToDecision = (outcome: PolicyOutcome): Decision => {
   switch (outcome.kind) {
+    case "providerBoundary":
+      return { action: "block" };
     case "rule":
       return toDecision(outcome.rule);
     case "denyDefault":

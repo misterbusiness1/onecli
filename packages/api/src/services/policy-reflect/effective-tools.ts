@@ -284,6 +284,16 @@ const evaluateVariant = (
 ): VariantEval => {
   const outcome = evaluatePolicyOutcome(engineRules, request);
   const orgCeiling = orgCeilingOf(engineRules, request);
+  if (outcome.kind === "providerBoundary") {
+    return {
+      key: "block",
+      verdict: "block",
+      rateLimit: null,
+      rateLimitWindow: null,
+      decidedBy: null,
+      orgCeiling: null,
+    };
+  }
   if (outcome.kind === "rule") {
     const sim = simRules.find((s) => s.rule === outcome.rule);
     if (!sim) throw new Error("effective-tools: matched rule lost metadata");
